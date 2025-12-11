@@ -110,7 +110,7 @@ function addMunicipalityLayer() {
         id: 'municipality-fill',
         type: 'fill',
         source: 'municipalities',
-        'source-layer': 'nnfcc_a', // レイヤー名はPMTilesによって異なる
+        'source-layer': 'municipalities', // tippecanoe --layer=municipalities で指定した名前
         paint: {
             'fill-color': colorExpression,
             'fill-opacity': 0.6
@@ -122,7 +122,7 @@ function addMunicipalityLayer() {
         id: 'municipality-line',
         type: 'line',
         source: 'municipalities',
-        'source-layer': 'nnfcc_a',
+        'source-layer': 'municipalities',
         paint: {
             'line-color': '#ffffff',
             'line-width': 1
