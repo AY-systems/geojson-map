@@ -1,48 +1,73 @@
-// 設定
-const GEOJSON_URL = './tokyo_sample.geojson'; // 本番では適切なURLに変更
-const CSV_URL = './sample_data.csv'; // 本番ではGoogle Sheetsの公開CSV URLに変更
+import maplibregl from 'maplibre-gl';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import { Protocol } from 'pmtiles';
+import Papa from 'papaparse';
 
-// 離島除外の閾値 (簡易面積計算)
-// 緯度経度の差分ベース。実際の運用では調整が必要。
-// 例: 0.0001 程度を閾値としてみる
-const MIN_AREA_THRESHOLD = 0.00005; 
+// 設定
+const CSV_URL = './sample_data.csv';
+
+// 国土数値情報の行政区域データ（PMTiles形式）
+// ※以下は公開されているサンプルURLです。本番では自前でホスティングしてください
+// const PMTILES_URL = 'https://tile.openstreetmap.jp/static/gsi_experimental_nnfcc_a.pmtiles';
+
+// 代替: 自前でPMTilesを生成する場合のローカルURL
+const PMTILES_URL = './japan_municipalities.pmtiles';
+
+// PMTilesプロトコルを登録
+const protocol = new Protocol();
+maplibregl.addProtocol('pmtiles', protocol.tile);
 
 // マップの初期化
-const map = L.map('map').setView([35.68, 139.75], 11);
+const map = new maplibregl.Map({
+    container: 'map',
+    style: {
+        version: 8,
+        sources: {
+            // OpenStreetMap背景
+            osm: {
+                type: 'raster',
+                tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                tileSize: 256,
+                attribution: '© OpenStreetMap contributors'
+            }
+        },
+        layers: [
+            {
+                id: 'osm-layer',
+                type: 'raster',
+                source: 'osm',
+                minzoom: 0,
+                maxzoom: 19
+            }
+        ]
+    },
+    center: [139.75, 35.68],
+    zoom: 10
+});
 
-// 背景地図 (OpenStreetMap)
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '© OpenStreetMap contributors'
-}).addTo(map);
+// ナビゲーションコントロール追加
+map.addControl(new maplibregl.NavigationControl());
+
+// 色マップを保持
+let colorMap = new Map();
 
 // メイン処理
 async function init() {
     try {
-        const [geoJsonData, csvData] = await Promise.all([
-            fetchGeoJSON(GEOJSON_URL),
-            fetchCSV(CSV_URL)
-        ]);
-
-        const colorMap = processCSV(csvData);
-        const filteredGeoJson = filterIslands(geoJsonData);
+        // CSVを読み込み
+        const csvData = await fetchCSV(CSV_URL);
+        colorMap = processCSV(csvData);
         
-        renderMap(filteredGeoJson, colorMap);
-        
-        document.getElementById('loading').textContent = '読み込み完了';
-        document.getElementById('loading').style.color = '#28a745';
+        // マップの読み込み完了を待つ
+        map.on('load', () => {
+            addMunicipalityLayer();
+            updateStatus('読み込み完了', '#28a745');
+        });
 
     } catch (error) {
         console.error('Error:', error);
-        document.getElementById('loading').textContent = 'エラーが発生しました';
-        document.getElementById('loading').style.color = '#dc3545';
+        updateStatus('エラーが発生しました: ' + error.message, '#dc3545');
     }
-}
-
-// GeoJSON取得
-async function fetchGeoJSON(url) {
-    const response = await fetch(url);
-    return await response.json();
 }
 
 // CSV取得 & パース
@@ -65,90 +90,101 @@ function processCSV(data) {
             map.set(row.city_name, row.color);
         }
     });
+    console.log('CSV読み込み完了:', map.size, '件');
     return map;
 }
 
-// 離島（小さなポリゴン）の除外処理
-function filterIslands(geoJson) {
-    // ディープコピーを作成して元のデータを破壊しないようにする
-    const newGeoJson = JSON.parse(JSON.stringify(geoJson));
+// 市区町村レイヤーを追加
+function addMunicipalityLayer() {
+    // PMTilesソースを追加
+    map.addSource('municipalities', {
+        type: 'vector',
+        url: `pmtiles://${PMTILES_URL}`
+    });
 
-    newGeoJson.features = newGeoJson.features.map(feature => {
-        if (feature.geometry.type === 'MultiPolygon') {
-            // MultiPolygonの場合、各ポリゴンの面積を計算し、小さいものを除去
-            const polygons = feature.geometry.coordinates;
-            
-            // 各ポリゴンの簡易面積を計算
-            const polygonsWithArea = polygons.map(poly => {
-                // 外側のリング(0番目)を使って面積概算
-                const outerRing = poly[0];
-                const area = calculatePolygonArea(outerRing);
-                return { poly, area };
-            });
+    // CSVの色データからmatch式を構築
+    const colorExpression = buildColorExpression();
 
-            // 最大のポリゴンを探す
-            const maxArea = Math.max(...polygonsWithArea.map(p => p.area));
-            
-            // 閾値判定: 最大面積の10%未満、かつ絶対閾値未満なら削除、等のロジック
-            // ここではシンプルに「絶対閾値未満」を削除します
-            const filteredPolygons = polygonsWithArea
-                .filter(p => p.area > MIN_AREA_THRESHOLD)
-                .map(p => p.poly);
-
-            if (filteredPolygons.length === 0) {
-                // 全部消えてしまったらnullを返す（後で除去）
-                return null; 
-            }
-
-            // 座標を更新
-            feature.geometry.coordinates = filteredPolygons;
-            
-            // もしポリゴンが1つになったらTypeをPolygonに変える等の最適化も可能だが
-            // Leafletは1つのMultiPolygonでも描画できるのでそのままにする
+    // 塗りつぶしレイヤー
+    map.addLayer({
+        id: 'municipality-fill',
+        type: 'fill',
+        source: 'municipalities',
+        'source-layer': 'nnfcc_a', // レイヤー名はPMTilesによって異なる
+        paint: {
+            'fill-color': colorExpression,
+            'fill-opacity': 0.6
         }
-        return feature;
-    }).filter(f => f !== null); // nullになったfeatureを除去
+    });
 
-    return newGeoJson;
+    // 境界線レイヤー
+    map.addLayer({
+        id: 'municipality-line',
+        type: 'line',
+        source: 'municipalities',
+        'source-layer': 'nnfcc_a',
+        paint: {
+            'line-color': '#ffffff',
+            'line-width': 1
+        }
+    });
+
+    // ホバー時のポップアップ
+    setupPopup();
 }
 
-// 簡易面積計算 (Shoelace formulaの簡易版)
-function calculatePolygonArea(coords) {
-    let area = 0;
-    const n = coords.length;
-    for (let i = 0; i < n; i++) {
-        const [x1, y1] = coords[i];
-        const [x2, y2] = coords[(i + 1) % n];
-        area += x1 * y2 - x2 * y1;
+// 色のmatch式を構築
+function buildColorExpression() {
+    if (colorMap.size === 0) {
+        return '#cccccc';
     }
-    return Math.abs(area) / 2;
+
+    // match式: ['match', ['get', 'property'], value1, color1, value2, color2, ..., defaultColor]
+    const matchExpr = ['match', ['get', 'N03_004']];
+    
+    colorMap.forEach((color, cityName) => {
+        matchExpr.push(cityName, color);
+    });
+    
+    // デフォルト色
+    matchExpr.push('#cccccc');
+    
+    return matchExpr;
 }
 
-// 地図描画
-function renderMap(geoJson, colorMap) {
-    L.geoJSON(geoJson, {
-        style: (feature) => {
-            // プロパティ名はデータソースによる。
-            // 国土数値情報などでは N03_004 が市区町村名
-            const cityName = feature.properties.N03_004; 
-            const color = colorMap.get(cityName) || '#cccccc'; // デフォルト色: グレー
+// ポップアップ設定
+function setupPopup() {
+    const popup = new maplibregl.Popup({
+        closeButton: false,
+        closeOnClick: false
+    });
 
-            return {
-                fillColor: color,
-                weight: 1,
-                opacity: 1,
-                color: 'white',
-                dashArray: '3',
-                fillOpacity: 0.7
-            };
-        },
-        onEachFeature: (feature, layer) => {
-            const cityName = feature.properties.N03_004;
-            if (cityName) {
-                layer.bindTooltip(cityName);
-            }
+    map.on('mousemove', 'municipality-fill', (e) => {
+        if (e.features.length > 0) {
+            const feature = e.features[0];
+            const cityName = feature.properties.N03_004 || feature.properties.name || '不明';
+            const prefName = feature.properties.N03_001 || '';
+            
+            popup
+                .setLngLat(e.lngLat)
+                .setHTML(`<strong>${prefName} ${cityName}</strong>`)
+                .addTo(map);
+            
+            map.getCanvas().style.cursor = 'pointer';
         }
-    }).addTo(map);
+    });
+
+    map.on('mouseleave', 'municipality-fill', () => {
+        popup.remove();
+        map.getCanvas().style.cursor = '';
+    });
+}
+
+// ステータス更新
+function updateStatus(message, color) {
+    const loadingEl = document.getElementById('loading');
+    loadingEl.textContent = message;
+    loadingEl.style.color = color;
 }
 
 // アプリ起動
