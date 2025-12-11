@@ -1,6 +1,6 @@
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { Protocol } from 'pmtiles';
+import { Protocol, PMTiles } from 'pmtiles';
 import Papa from 'papaparse';
 
 // 国土数値情報の行政区域データ（PMTiles形式）
@@ -12,8 +12,14 @@ const DEFAULT_CSV_URL = '';
 // CSVで指定された市区町村のセット
 let specifiedCities = new Set();
 
-// PMTilesプロトコルを登録
+// PMTilesプロトコルを登録（Firefox対応）
 const protocol = new Protocol();
+
+// PMTilesインスタンスを作成してプロトコルに追加
+const pmtilesUrl = new URL(PMTILES_URL, window.location.href).href;
+const pmtiles = new PMTiles(pmtilesUrl);
+protocol.add(pmtiles);
+
 maplibregl.addProtocol('pmtiles', protocol.tile);
 
 // マップの初期化
@@ -209,10 +215,10 @@ function buildColorExpression() {
 
 // 市区町村レイヤーを追加
 function addMunicipalityLayer() {
-    // PMTilesソースを追加
+    // PMTilesソースを追加（絶対URLを使用してFirefoxでの問題を回避）
     map.addSource('municipalities', {
         type: 'vector',
-        url: `pmtiles://${PMTILES_URL}`
+        url: `pmtiles://${pmtilesUrl}`
     });
 
     const colorExpression = buildColorExpression();
