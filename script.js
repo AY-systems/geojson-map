@@ -204,10 +204,17 @@ function buildColorExpression() {
         return '#cccccc'; // CSVが空の場合は全てグレー
     }
     
-    // match式を使用: 指定された市区町村に一致すれば青、それ以外はグレー
+    // N03_003（郡・政令市名）+ N03_004（市区町村名）を結合してマッチング
+    // 例: "上益城郡" + "益城町" = "上益城郡益城町"
     return [
         'case',
-        ['in', ['get', 'N03_004'], ['literal', cityList]],
+        ['in', 
+            ['concat', 
+                ['coalesce', ['get', 'N03_003'], ''], 
+                ['coalesce', ['get', 'N03_004'], '']
+            ], 
+            ['literal', cityList]
+        ],
         '#4a90d9',  // CSVで指定された市区町村（青）
         '#cccccc'   // それ以外（グレー）
     ];
@@ -262,12 +269,14 @@ function setupPopup() {
     map.on('mousemove', 'municipality-fill', (e) => {
         if (e.features.length > 0) {
             const feature = e.features[0];
-            const cityName = feature.properties.N03_004 || feature.properties.name || '不明';
             const prefName = feature.properties.N03_001 || '';
+            const gunName = feature.properties.N03_003 || '';  // 郡・政令市名
+            const cityName = feature.properties.N03_004 || feature.properties.name || '不明';
+            const fullName = gunName + cityName;  // 結合名
             
             popup
                 .setLngLat(e.lngLat)
-                .setHTML(`<strong>${prefName} ${cityName}</strong>`)
+                .setHTML(`<strong>${prefName} ${fullName}</strong>`)
                 .addTo(map);
             
             map.getCanvas().style.cursor = 'pointer';
@@ -299,9 +308,13 @@ function fitToSelectedCities() {
         });
 
         // CSVで指定された市区町村のフィーチャーをフィルタリング
-        const targetFeatures = features.filter(f => 
-            specifiedCities.has(f.properties.N03_004)
-        );
+        // N03_003（郡・政令市名）+ N03_004（市区町村名）を結合してマッチング
+        const targetFeatures = features.filter(f => {
+            const gunName = f.properties.N03_003 || '';
+            const cityName = f.properties.N03_004 || '';
+            const fullName = gunName + cityName;
+            return specifiedCities.has(fullName);
+        });
 
         if (targetFeatures.length === 0) {
             console.log('CSVで指定された市区町村が見つかりません。再試行します...');
