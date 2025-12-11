@@ -34,9 +34,63 @@ body, html {
     margin: 0 0 10px 0;
 }
 
+#url-input-container {
+    margin-bottom: 10px;
+}
+
+#url-input-container label {
+    display: block;
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 5px;
+}
+
+#spreadsheet-url {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 12px;
+    box-sizing: border-box;
+    margin-bottom: 8px;
+}
+
+#spreadsheet-url:focus {
+    outline: none;
+    border-color: #4a90d9;
+}
+
+#load-btn {
+    width: 100%;
+    padding: 10px;
+    background: #4a90d9;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+#load-btn:hover {
+    background: #357abd;
+}
+
+#load-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
 #loading {
     font-weight: bold;
     color: #007bff;
+    margin-top: 10px;
+}
+
+#city-count {
+    font-size: 12px;
+    color: #666;
+    margin-top: 5px;
 }
 
 /* MapLibre GL JSのポップアップスタイル */

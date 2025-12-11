@@ -5,7 +5,9 @@ import Papa from 'papaparse';
 
 // 国土数値情報の行政区域データ（PMTiles形式）
 const PMTILES_URL = './japan_municipalities.pmtiles';
-const CSV_URL = './sample_data.csv';
+
+// デフォルトのスプレッドシートURL
+const DEFAULT_CSV_URL = '';
 
 // CSVで指定された市区町村のセット
 let specifiedCities = new Set();
@@ -45,47 +47,146 @@ const map = new maplibregl.Map({
 // ナビゲーションコントロール追加
 map.addControl(new maplibregl.NavigationControl());
 
+// スプレッドシートURLをCSV出力URLに変換
+function convertToCSVUrl(url) {
+    // すでにCSV出力形式の場合はそのまま返す
+    if (url.includes('output=csv') || url.includes('export?format=csv')) {
+        return url;
+    }
+    
+    // 公開URL形式: /d/e/XXXXX/pubhtml → /d/e/XXXXX/pub?output=csv
+    if (url.includes('/pubhtml')) {
+        return url.replace('/pubhtml', '/pub?output=csv');
+    }
+    
+    // 編集URL形式: /d/XXXXX/edit → /d/XXXXX/export?format=csv
+    const editMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (editMatch) {
+        const spreadsheetId = editMatch[1];
+        // gidがあれば抽出
+        const gidMatch = url.match(/gid=(\d+)/);
+        const gid = gidMatch ? gidMatch[1] : '0';
+        return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`;
+    }
+    
+    return url;
+}
+
 // CSVを読み込んで市区町村リストを取得
-async function loadCSV() {
-    const response = await fetch(CSV_URL);
+async function loadCSV(csvUrl) {
+    const response = await fetch(csvUrl);
+    if (!response.ok) {
+        throw new Error(`CSV読み込みエラー: ${response.status}`);
+    }
     const csvText = await response.text();
     
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         Papa.parse(csvText, {
             header: true,
             complete: (results) => {
+                specifiedCities.clear(); // 前のデータをクリア
                 results.data.forEach(row => {
-                    if (row.city_name) {
-                        specifiedCities.add(row.city_name);
+                    // カラム名「市区町村」または「city_name」に対応
+                    const cityName = row['市区町村'] || row.city_name;
+                    if (cityName && cityName.trim()) {
+                        specifiedCities.add(cityName.trim());
                     }
                 });
                 resolve();
+            },
+            error: (error) => {
+                reject(error);
             }
         });
     });
 }
 
-// メイン処理
-async function init() {
+// スプレッドシートを読み込んでマップを更新
+async function loadSpreadsheet(url) {
+    const loadBtn = document.getElementById('load-btn');
+    const cityCountEl = document.getElementById('city-count');
+    
     try {
-        // CSVを読み込む
-        await loadCSV();
+        loadBtn.disabled = true;
+        loadBtn.textContent = '読み込み中...';
+        updateStatus('スプレッドシートを読み込み中...', '#007bff');
+        
+        const csvUrl = convertToCSVUrl(url);
+        console.log('CSV URL:', csvUrl);
+        
+        await loadCSV(csvUrl);
         console.log('CSVで指定された市区町村:', Array.from(specifiedCities));
         
-        // マップの読み込み完了を待つ
-        map.on('load', () => {
-            addMunicipalityLayer();
-            updateStatus('読み込み完了', '#28a745');
-        });
-
-        map.on('error', (error) => {
-            console.error('Error:', error);
-            updateStatus('エラーが発生しました: ' + error.message, '#dc3545');
-        });
+        // レイヤーを更新
+        updateMunicipalityLayer();
+        
+        // 選択された市区町村にズーム
+        fitToSelectedCities();
+        
+        updateStatus('読み込み完了', '#28a745');
+        cityCountEl.textContent = `${specifiedCities.size} 市区町村を選択中`;
+        
+        // URLをローカルストレージに保存
+        localStorage.setItem('spreadsheetUrl', url);
+        
     } catch (error) {
-        console.error('初期化エラー:', error);
-        updateStatus('エラーが発生しました: ' + error.message, '#dc3545');
+        console.error('読み込みエラー:', error);
+        updateStatus('エラー: ' + error.message, '#dc3545');
+        cityCountEl.textContent = '';
+    } finally {
+        loadBtn.disabled = false;
+        loadBtn.textContent = '読み込み';
     }
+}
+
+// レイヤーの色を更新
+function updateMunicipalityLayer() {
+    const colorExpression = buildColorExpression();
+    
+    if (map.getLayer('municipality-fill')) {
+        map.setPaintProperty('municipality-fill', 'fill-color', colorExpression);
+    }
+}
+
+// メイン処理
+async function init() {
+    // UI要素を取得
+    const urlInput = document.getElementById('spreadsheet-url');
+    const loadBtn = document.getElementById('load-btn');
+    
+    // 保存されたURLがあれば復元
+    const savedUrl = localStorage.getItem('spreadsheetUrl') || DEFAULT_CSV_URL;
+    urlInput.value = savedUrl;
+    
+    // 読み込みボタンのイベント
+    loadBtn.addEventListener('click', () => {
+        const url = urlInput.value.trim();
+        if (url) {
+            loadSpreadsheet(url);
+        }
+    });
+    
+    // Enterキーでも読み込み
+    urlInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            const url = urlInput.value.trim();
+            if (url) {
+                loadSpreadsheet(url);
+            }
+        }
+    });
+    
+    // マップの読み込み完了を待つ
+    map.on('load', () => {
+        addMunicipalityLayer();
+        // 初期URLでスプレッドシートを読み込み
+        loadSpreadsheet(savedUrl);
+    });
+
+    map.on('error', (error) => {
+        console.error('Error:', error);
+        updateStatus('エラーが発生しました: ' + error.message, '#dc3545');
+    });
 }
 
 // 色分け表現を構築
@@ -178,6 +279,57 @@ function updateStatus(message, color) {
     const loadingEl = document.getElementById('loading');
     loadingEl.textContent = message;
     loadingEl.style.color = color;
+}
+
+// CSVで指定された市区町村の範囲にフィット
+function fitToSelectedCities() {
+    if (specifiedCities.size === 0) return;
+
+    // ソースデータの読み込みを待つ
+    map.once('idle', () => {
+        // 画面全体のフィーチャーを取得
+        const features = map.querySourceFeatures('municipalities', {
+            sourceLayer: 'municipalities'
+        });
+
+        // CSVで指定された市区町村のフィーチャーをフィルタリング
+        const targetFeatures = features.filter(f => 
+            specifiedCities.has(f.properties.N03_004)
+        );
+
+        if (targetFeatures.length === 0) {
+            console.log('CSVで指定された市区町村が見つかりません。再試行します...');
+            // 少し待ってから再試行
+            setTimeout(() => fitToSelectedCities(), 500);
+            return;
+        }
+
+        // バウンディングボックスを計算
+        const bounds = new maplibregl.LngLatBounds();
+        
+        targetFeatures.forEach(feature => {
+            // ジオメトリの座標からバウンドを計算
+            const addCoords = (coords) => {
+                if (typeof coords[0] === 'number') {
+                    bounds.extend(coords);
+                } else {
+                    coords.forEach(c => addCoords(c));
+                }
+            };
+            
+            if (feature.geometry && feature.geometry.coordinates) {
+                addCoords(feature.geometry.coordinates);
+            }
+        });
+
+        if (!bounds.isEmpty()) {
+            console.log('選択された市区町村にズーム:', Array.from(specifiedCities));
+            map.fitBounds(bounds, {
+                padding: 50,
+                maxZoom: 12
+            });
+        }
+    });
 }
 
 // アプリ起動
