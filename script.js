@@ -3,15 +3,12 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { Protocol } from 'pmtiles';
 import Papa from 'papaparse';
 
-// 設定
+// 国土数値情報の行政区域データ（PMTiles形式）
+const PMTILES_URL = './japan_municipalities.pmtiles';
 const CSV_URL = './sample_data.csv';
 
-// 国土数値情報の行政区域データ（PMTiles形式）
-// ※以下は公開されているサンプルURLです。本番では自前でホスティングしてください
-// const PMTILES_URL = 'https://tile.openstreetmap.jp/static/gsi_experimental_nnfcc_a.pmtiles';
-
-// 代替: 自前でPMTilesを生成する場合のローカルURL
-const PMTILES_URL = './japan_municipalities.pmtiles';
+// CSVで指定された市区町村のセット
+let specifiedCities = new Set();
 
 // PMTilesプロトコルを登録
 const protocol = new Protocol();
@@ -48,15 +45,32 @@ const map = new maplibregl.Map({
 // ナビゲーションコントロール追加
 map.addControl(new maplibregl.NavigationControl());
 
-// 色マップを保持
-let colorMap = new Map();
+// CSVを読み込んで市区町村リストを取得
+async function loadCSV() {
+    const response = await fetch(CSV_URL);
+    const csvText = await response.text();
+    
+    return new Promise((resolve) => {
+        Papa.parse(csvText, {
+            header: true,
+            complete: (results) => {
+                results.data.forEach(row => {
+                    if (row.city_name) {
+                        specifiedCities.add(row.city_name);
+                    }
+                });
+                resolve();
+            }
+        });
+    });
+}
 
 // メイン処理
 async function init() {
     try {
-        // CSVを読み込み
-        const csvData = await fetchCSV(CSV_URL);
-        colorMap = processCSV(csvData);
+        // CSVを読み込む
+        await loadCSV();
+        console.log('CSVで指定された市区町村:', Array.from(specifiedCities));
         
         // マップの読み込み完了を待つ
         map.on('load', () => {
@@ -64,34 +78,32 @@ async function init() {
             updateStatus('読み込み完了', '#28a745');
         });
 
+        map.on('error', (error) => {
+            console.error('Error:', error);
+            updateStatus('エラーが発生しました: ' + error.message, '#dc3545');
+        });
     } catch (error) {
-        console.error('Error:', error);
+        console.error('初期化エラー:', error);
         updateStatus('エラーが発生しました: ' + error.message, '#dc3545');
     }
 }
 
-// CSV取得 & パース
-async function fetchCSV(url) {
-    return new Promise((resolve, reject) => {
-        Papa.parse(url, {
-            download: true,
-            header: true,
-            complete: (results) => resolve(results.data),
-            error: (error) => reject(error)
-        });
-    });
-}
-
-// CSVデータをMapに変換 (City Name -> Color)
-function processCSV(data) {
-    const map = new Map();
-    data.forEach(row => {
-        if (row.city_name && row.color) {
-            map.set(row.city_name, row.color);
-        }
-    });
-    console.log('CSV読み込み完了:', map.size, '件');
-    return map;
+// 色分け表現を構築
+function buildColorExpression() {
+    // CSVで指定された市区町村は青色、それ以外はグレー
+    const cityList = Array.from(specifiedCities);
+    
+    if (cityList.length === 0) {
+        return '#cccccc'; // CSVが空の場合は全てグレー
+    }
+    
+    // match式を使用: 指定された市区町村に一致すれば青、それ以外はグレー
+    return [
+        'case',
+        ['in', ['get', 'N03_004'], ['literal', cityList]],
+        '#4a90d9',  // CSVで指定された市区町村（青）
+        '#cccccc'   // それ以外（グレー）
+    ];
 }
 
 // 市区町村レイヤーを追加
@@ -102,15 +114,15 @@ function addMunicipalityLayer() {
         url: `pmtiles://${PMTILES_URL}`
     });
 
-    // CSVの色データからmatch式を構築
     const colorExpression = buildColorExpression();
+    console.log('色分け表現:', colorExpression);
 
     // 塗りつぶしレイヤー
     map.addLayer({
         id: 'municipality-fill',
         type: 'fill',
         source: 'municipalities',
-        'source-layer': 'municipalities', // tippecanoe --layer=municipalities で指定した名前
+        'source-layer': 'municipalities',
         paint: {
             'fill-color': colorExpression,
             'fill-opacity': 0.6
@@ -131,25 +143,6 @@ function addMunicipalityLayer() {
 
     // ホバー時のポップアップ
     setupPopup();
-}
-
-// 色のmatch式を構築
-function buildColorExpression() {
-    if (colorMap.size === 0) {
-        return '#cccccc';
-    }
-
-    // match式: ['match', ['get', 'property'], value1, color1, value2, color2, ..., defaultColor]
-    const matchExpr = ['match', ['get', 'N03_004']];
-    
-    colorMap.forEach((color, cityName) => {
-        matchExpr.push(cityName, color);
-    });
-    
-    // デフォルト色
-    matchExpr.push('#cccccc');
-    
-    return matchExpr;
 }
 
 // ポップアップ設定
