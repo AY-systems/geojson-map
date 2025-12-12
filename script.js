@@ -376,7 +376,7 @@ function showSearchResults(query) {
 
     // 結果クリックでその市区町村に移動
     searchResults.querySelectorAll('.search-result-item').forEach(item => {
-        item.addEventListener('click', () => {
+        item.addEventListener('mousedown', () => {
             const code = item.dataset.code;
             const bounds = JSON.parse(item.dataset.bounds);
             const fullName = item.dataset.full;
