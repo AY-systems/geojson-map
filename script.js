@@ -15,6 +15,23 @@ const DEFAULT_CSV_URL = '';
 // CSVで指定された市区町村のセット
 let specifiedCities = new Set();
 
+// 選択済み市区町村の色（後から変更可能）
+const SELECTED_COLOR_STORAGE_KEY = 'selectedMunicipalityColor';
+let selectedMunicipalityColor = localStorage.getItem(SELECTED_COLOR_STORAGE_KEY) || '#4a90d9';
+
+function setSelectedMunicipalityColor(color) {
+    if (!color || typeof color !== 'string') return;
+    selectedMunicipalityColor = color;
+    localStorage.setItem(SELECTED_COLOR_STORAGE_KEY, color);
+
+    const mapPicker = document.getElementById('selected-color-map');
+    if (mapPicker && mapPicker.value !== color) {
+        mapPicker.value = color;
+    }
+
+    updateMunicipalityLayer();
+}
+
 // 検索用市区町村データ
 let searchData = [];
 
@@ -107,6 +124,51 @@ class ExportControl {
 }
 
 map.addControl(new ExportControl(), 'top-left');
+
+// 地図上で選択色を変えるコントロール
+class SelectedColorControl {
+    onAdd(map) {
+        this._map = map;
+        this._container = document.createElement('div');
+        this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+
+        const label = document.createElement('label');
+        label.title = '選択済みの色を変更';
+        label.style.display = 'flex';
+        label.style.alignItems = 'center';
+        label.style.justifyContent = 'center';
+        label.style.width = '30px';
+        label.style.height = '30px';
+        label.style.cursor = 'pointer';
+        label.textContent = '🎨';
+
+        const input = document.createElement('input');
+        input.type = 'color';
+        input.id = 'selected-color-map';
+        input.value = selectedMunicipalityColor;
+        input.style.position = 'absolute';
+        input.style.opacity = '0';
+        input.style.width = '1px';
+        input.style.height = '1px';
+        input.style.pointerEvents = 'none';
+
+        label.appendChild(input);
+        label.addEventListener('click', () => input.click());
+        input.addEventListener('input', (e) => {
+            setSelectedMunicipalityColor(e.target.value);
+        });
+
+        this._container.appendChild(label);
+        return this._container;
+    }
+
+    onRemove() {
+        this._container.parentNode.removeChild(this._container);
+        this._map = undefined;
+    }
+}
+
+map.addControl(new SelectedColorControl(), 'top-left');
 
 // スプレッドシートURLをCSV出力URLに変換
 function convertToCSVUrl(url) {
@@ -311,7 +373,7 @@ function buildColorExpression() {
             ],
             ['literal', cityList]
         ],
-        '#4a90d9',  // CSVで指定された市区町村（青）
+        selectedMunicipalityColor,  // CSVで指定された市区町村（選択色）
         '#cccccc'   // それ以外（グレー）
     ];
 }
