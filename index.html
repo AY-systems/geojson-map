@@ -12,6 +12,17 @@
 
     <div id="controls">
         <h1>市区町村 塗りつぶしツール</h1>
+        
+        <!-- 検索機能 -->
+        <div id="search-container">
+            <label for="search-input">市区町村を検索:</label>
+            <input type="text" id="search-input" placeholder="例: 渋谷区、横浜市...">
+            <div id="search-results"></div>
+        </div>
+        
+        <hr>
+        
+        <!-- スプレッドシート読み込み -->
         <div id="url-input-container">
             <label for="spreadsheet-url">スプレッドシートURL:</label>
             <input type="text" id="spreadsheet-url" placeholder="https://docs.google.com/spreadsheets/d/...">

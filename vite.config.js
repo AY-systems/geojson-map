@@ -16,6 +16,7 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         { src: 'japan_municipalities.pmtiles', dest: '' },
+        { src: 'public/search-data.json', dest: '' },
       ]
     })
   ]

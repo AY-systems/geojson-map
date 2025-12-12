@@ -6,11 +6,20 @@ import Papa from 'papaparse';
 // 国土数値情報の行政区域データ（PMTiles形式）
 const PMTILES_URL = './japan_municipalities.pmtiles';
 
+// 検索用データのURL
+const SEARCH_DATA_URL = './search-data.json';
+
 // デフォルトのスプレッドシートURL
 const DEFAULT_CSV_URL = '';
 
 // CSVで指定された市区町村のセット
 let specifiedCities = new Set();
+
+// 検索用市区町村データ
+let searchData = [];
+
+// 現在ハイライト中の市区町村コード
+let highlightedCode = null;
 
 // PMTilesプロトコルを登録（Firefox対応）
 const protocol = new Protocol();
@@ -59,12 +68,12 @@ function convertToCSVUrl(url) {
     if (url.includes('output=csv') || url.includes('export?format=csv')) {
         return url;
     }
-    
+
     // 公開URL形式: /d/e/XXXXX/pubhtml → /d/e/XXXXX/pub?output=csv
     if (url.includes('/pubhtml')) {
         return url.replace('/pubhtml', '/pub?output=csv');
     }
-    
+
     // 編集URL形式: /d/XXXXX/edit → /d/XXXXX/export?format=csv
     const editMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
     if (editMatch) {
@@ -74,7 +83,7 @@ function convertToCSVUrl(url) {
         const gid = gidMatch ? gidMatch[1] : '0';
         return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${gid}`;
     }
-    
+
     return url;
 }
 
@@ -85,7 +94,7 @@ async function loadCSV(csvUrl) {
         throw new Error(`CSV読み込みエラー: ${response.status}`);
     }
     const csvText = await response.text();
-    
+
     return new Promise((resolve, reject) => {
         Papa.parse(csvText, {
             header: true,
@@ -111,30 +120,27 @@ async function loadCSV(csvUrl) {
 async function loadSpreadsheet(url) {
     const loadBtn = document.getElementById('load-btn');
     const cityCountEl = document.getElementById('city-count');
-    
+
     try {
         loadBtn.disabled = true;
         loadBtn.textContent = '読み込み中...';
         updateStatus('スプレッドシートを読み込み中...', '#007bff');
-        
+
         const csvUrl = convertToCSVUrl(url);
         console.log('CSV URL:', csvUrl);
-        
+
         await loadCSV(csvUrl);
         console.log('CSVで指定された市区町村:', Array.from(specifiedCities));
-        
+
         // レイヤーを更新
         updateMunicipalityLayer();
-        
-        // 選択された市区町村にズーム
-        fitToSelectedCities();
-        
+
         updateStatus('読み込み完了', '#28a745');
         cityCountEl.textContent = `${specifiedCities.size} 市区町村を選択中`;
-        
+
         // URLをローカルストレージに保存
         localStorage.setItem('spreadsheetUrl', url);
-        
+
     } catch (error) {
         console.error('読み込みエラー:', error);
         updateStatus('エラー: ' + error.message, '#dc3545');
@@ -148,7 +154,7 @@ async function loadSpreadsheet(url) {
 // レイヤーの色を更新
 function updateMunicipalityLayer() {
     const colorExpression = buildColorExpression();
-    
+
     if (map.getLayer('municipality-fill')) {
         map.setPaintProperty('municipality-fill', 'fill-color', colorExpression);
     }
@@ -159,11 +165,34 @@ async function init() {
     // UI要素を取得
     const urlInput = document.getElementById('spreadsheet-url');
     const loadBtn = document.getElementById('load-btn');
-    
+    const searchInput = document.getElementById('search-input');
+    const searchResults = document.getElementById('search-results');
+
+    // 検索用データを読み込み
+    await loadSearchData();
+
+    // 検索入力のイベント
+    searchInput.addEventListener('input', (e) => {
+        const query = e.target.value.trim();
+        if (query.length >= 1) {
+            showSearchResults(query);
+        } else {
+            searchResults.innerHTML = '';
+            clearHighlight();
+        }
+    });
+
+    // 検索フィールドからフォーカスが外れたら結果を閉じる（少し遅延）
+    searchInput.addEventListener('blur', () => {
+        setTimeout(() => {
+            searchResults.innerHTML = '';
+        }, 200);
+    });
+
     // 保存されたURLがあれば復元
     const savedUrl = localStorage.getItem('spreadsheetUrl') || DEFAULT_CSV_URL;
     urlInput.value = savedUrl;
-    
+
     // 読み込みボタンのイベント
     loadBtn.addEventListener('click', () => {
         const url = urlInput.value.trim();
@@ -171,7 +200,7 @@ async function init() {
             loadSpreadsheet(url);
         }
     });
-    
+
     // Enterキーでも読み込み
     urlInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
@@ -181,7 +210,7 @@ async function init() {
             }
         }
     });
-    
+
     // マップの読み込み完了を待つ
     map.on('load', () => {
         addMunicipalityLayer();
@@ -199,20 +228,20 @@ async function init() {
 function buildColorExpression() {
     // CSVで指定された市区町村は青色、それ以外はグレー
     const cityList = Array.from(specifiedCities);
-    
+
     if (cityList.length === 0) {
         return '#cccccc'; // CSVが空の場合は全てグレー
     }
-    
+
     // N03_003（郡・政令市名）+ N03_004（市区町村名）を結合してマッチング
     // 例: "上益城郡" + "益城町" = "上益城郡益城町"
     return [
         'case',
-        ['in', 
-            ['concat', 
-                ['coalesce', ['get', 'N03_003'], ''], 
+        ['in',
+            ['concat',
+                ['coalesce', ['get', 'N03_003'], ''],
                 ['coalesce', ['get', 'N03_004'], '']
-            ], 
+            ],
             ['literal', cityList]
         ],
         '#4a90d9',  // CSVで指定された市区町村（青）
@@ -273,12 +302,12 @@ function setupPopup() {
             const gunName = feature.properties.N03_003 || '';  // 郡・政令市名
             const cityName = feature.properties.N03_004 || feature.properties.name || '不明';
             const fullName = gunName + cityName;  // 結合名
-            
+
             popup
                 .setLngLat(e.lngLat)
                 .setHTML(`<strong>${prefName} ${fullName}</strong>`)
                 .addTo(map);
-            
+
             map.getCanvas().style.cursor = 'pointer';
         }
     });
@@ -296,60 +325,126 @@ function updateStatus(message, color) {
     loadingEl.style.color = color;
 }
 
-// CSVで指定された市区町村の範囲にフィット
-function fitToSelectedCities() {
-    if (specifiedCities.size === 0) return;
-
-    // ソースデータの読み込みを待つ
-    map.once('idle', () => {
-        // 画面全体のフィーチャーを取得
-        const features = map.querySourceFeatures('municipalities', {
-            sourceLayer: 'municipalities'
-        });
-
-        // CSVで指定された市区町村のフィーチャーをフィルタリング
-        // N03_003（郡・政令市名）+ N03_004（市区町村名）を結合してマッチング
-        const targetFeatures = features.filter(f => {
-            const gunName = f.properties.N03_003 || '';
-            const cityName = f.properties.N03_004 || '';
-            const fullName = gunName + cityName;
-            return specifiedCities.has(fullName);
-        });
-
-        if (targetFeatures.length === 0) {
-            console.log('CSVで指定された市区町村が見つかりません。再試行します...');
-            // 少し待ってから再試行
-            setTimeout(() => fitToSelectedCities(), 500);
-            return;
-        }
-
-        // バウンディングボックスを計算
-        const bounds = new maplibregl.LngLatBounds();
-        
-        targetFeatures.forEach(feature => {
-            // ジオメトリの座標からバウンドを計算
-            const addCoords = (coords) => {
-                if (typeof coords[0] === 'number') {
-                    bounds.extend(coords);
-                } else {
-                    coords.forEach(c => addCoords(c));
-                }
-            };
-            
-            if (feature.geometry && feature.geometry.coordinates) {
-                addCoords(feature.geometry.coordinates);
-            }
-        });
-
-        if (!bounds.isEmpty()) {
-            console.log('選択された市区町村にズーム:', Array.from(specifiedCities));
-            map.fitBounds(bounds, {
-                padding: 50,
-                maxZoom: 12
-            });
-        }
-    });
-}
 
 // アプリ起動
 init();
+
+// ==========================================
+// 検索機能
+// ==========================================
+
+/**
+ * 検索用データを読み込み
+ */
+async function loadSearchData() {
+    try {
+        const response = await fetch(SEARCH_DATA_URL);
+        if (response.ok) {
+            searchData = await response.json();
+            console.log(`検索用データを読み込みました: ${searchData.length} 件`);
+        }
+    } catch (error) {
+        console.warn('検索用データの読み込みに失敗しました:', error);
+    }
+}
+
+/**
+ * 検索結果を表示
+ */
+function showSearchResults(query) {
+    const searchResults = document.getElementById('search-results');
+    const normalizedQuery = query.toLowerCase();
+
+    // 検索（都道府県名、市区町村名、フルネームで検索）
+    const results = searchData.filter(m =>
+        m.full.toLowerCase().includes(normalizedQuery) ||
+        m.city.toLowerCase().includes(normalizedQuery) ||
+        m.pref.toLowerCase().includes(normalizedQuery)
+    ).slice(0, 10); // 最大10件
+
+    if (results.length === 0) {
+        searchResults.innerHTML = '<div class="search-no-results">該当する市区町村がありません</div>';
+        return;
+    }
+
+    searchResults.innerHTML = results.map(m => `
+        <div class="search-result-item" data-code="${m.code}" data-bounds='${JSON.stringify(m.bounds)}' data-full="${m.full}">
+            <span class="city-name">${m.full}</span>
+            <span class="pref-name">${m.pref}</span>
+        </div>
+    `).join('');
+
+    // 結果クリックでその市区町村に移動
+    searchResults.querySelectorAll('.search-result-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const code = item.dataset.code;
+            const bounds = JSON.parse(item.dataset.bounds);
+            const fullName = item.dataset.full;
+
+            // 検索結果をクリア
+            searchResults.innerHTML = '';
+            document.getElementById('search-input').value = fullName;
+
+            // 市区町村に移動してハイライト
+            flyToMunicipality(bounds, code);
+        });
+    });
+}
+
+/**
+ * 市区町村に移動してハイライト
+ */
+function flyToMunicipality(bounds, code) {
+    // バウンドに移動
+    map.fitBounds(bounds, {
+        padding: 50,
+        maxZoom: 12,
+        duration: 1000
+    });
+
+    // ハイライト表示
+    highlightMunicipality(code);
+}
+
+/**
+ * 市区町村をハイライト表示
+ */
+function highlightMunicipality(code) {
+    highlightedCode = code;
+
+    // ハイライトレイヤーがなければ追加
+    if (!map.getLayer('municipality-highlight')) {
+        map.addLayer({
+            id: 'municipality-highlight',
+            type: 'line',
+            source: 'municipalities',
+            'source-layer': 'municipalities',
+            paint: {
+                'line-color': '#ff6b35',
+                'line-width': 4,
+                'line-opacity': 0.9
+            },
+            filter: ['==', 'N03_007', '']
+        });
+    }
+
+    // フィルターを更新
+    map.setFilter('municipality-highlight', ['==', 'N03_007', code]);
+
+    // 5秒後にハイライトを消す
+    setTimeout(() => {
+        if (highlightedCode === code) {
+            clearHighlight();
+        }
+    }, 5000);
+}
+
+/**
+ * ハイライトをクリア
+ */
+function clearHighlight() {
+    highlightedCode = null;
+    if (map.getLayer('municipality-highlight')) {
+        map.setFilter('municipality-highlight', ['==', 'N03_007', '']);
+    }
+}

@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "build:pmtiles": "./scripts/build-pmtiles.sh",
+    "generate:search": "node scripts/generate-search-data.cjs",
+    "preprocess": "npm run generate:search",
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run preprocess && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
