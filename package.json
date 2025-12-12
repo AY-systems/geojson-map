@@ -4,6 +4,7 @@
   "description": "CSVから市区町村のリストを取得し、マップを塗りつぶすツール",
   "type": "module",
   "scripts": {
+    "build:pmtiles": "./scripts/build-pmtiles.sh",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
