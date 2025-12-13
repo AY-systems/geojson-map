@@ -1,0 +1,13 @@
+{
+  "rules": [
+    {
+      "allowed": {
+        "origins": ["https://ay-systems.github.io", "http://localhost:3000"],
+        "methods": ["GET", "HEAD"],
+        "headers": ["range", "if-match"]
+      },
+      "exposeHeaders": ["etag"],
+      "maxAgeSeconds": 3000
+    }
+  ]
+}
