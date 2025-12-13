@@ -122,7 +122,7 @@ echo "    - 同じ行政区域コードで結合 (dissolve)"
 # copy-fields で必要な属性（都道府県名など）を引き継ぐ
 mapshaper "$INPUT_GEOJSON" \
     -simplify 1% keep-shapes \
-    -dissolve N03_007 copy-fields=N03_001,N03_002,N03_003,N03_004 \
+    -dissolve N03_007 copy-fields=N03_001,N03_002,N03_003,N03_004,N03_005 \
     -o "$PROCESSED_GEOJSON" format=geojson force
 
 PROCESSED_SIZE=$(du -h "$PROCESSED_GEOJSON" | cut -f1)

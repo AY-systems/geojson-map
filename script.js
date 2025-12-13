@@ -4,7 +4,7 @@ import { Protocol, PMTiles } from 'pmtiles';
 import Papa from 'papaparse';
 
 // 国土数値情報の行政区域データ（PMTiles形式）
-const PMTILES_URL = 'https://r2-pmtiles.ay-sys.link/japan_municipalities.pmtiles';
+const PMTILES_URL = './japan_municipalities.pmtiles';
 
 // 検索用データのURL
 const SEARCH_DATA_URL = './search-data.json';
@@ -430,7 +430,8 @@ function setupPopup() {
             const prefName = feature.properties.N03_001 || '';
             const gunName = feature.properties.N03_003 || '';  // 郡・政令市名
             const cityName = feature.properties.N03_004 || feature.properties.name || '不明';
-            const fullName = gunName + cityName;  // 結合名
+            const kuName = feature.properties.N03_005 || '';  // 区名（政令市の場合）
+            const fullName = gunName + cityName + kuName;  // 結合名
 
             popup
                 .setLngLat(e.lngLat)
