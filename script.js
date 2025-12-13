@@ -13,11 +13,14 @@ const SEARCH_DATA_URL = './search-data.json';
 const DEFAULT_CSV_URL = '';
 
 // CSVで指定された市区町村のセット
-let specifiedCities = new Set();
+let specifiedCities = new Map();
+
+// CSVのヘッダー名称
+const CsvHeaderColors = new Map();
 
 // 選択済み市区町村の色（後から変更可能）
-const SELECTED_COLOR_STORAGE_KEY = 'selectedMunicipalityColor';
-let selectedMunicipalityColor = localStorage.getItem(SELECTED_COLOR_STORAGE_KEY) || '#4a90d9';
+// const SELECTED_COLOR_STORAGE_KEY = 'selectedMunicipalityColor';
+// let selectedMunicipalityColor = localStorage.getItem(SELECTED_COLOR_STORAGE_KEY) || '#4a90d9';
 
 function setSelectedMunicipalityColor(color) {
     if (!color || typeof color !== 'string') return;
@@ -132,6 +135,15 @@ class SelectedColorControl {
         this._container = document.createElement('div');
         this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
 
+        const colorControlDiv = document.createElement('div');
+        colorControlDiv.style.position = 'absolute';
+        colorControlDiv.style.width = '150px';
+        colorControlDiv.style.top = '30px';
+        colorControlDiv.style.left = '30px';
+        colorControlDiv.style.display = 'none'; // 非表示にする
+        colorControlDiv.style.background = "red";
+        this._container.appendChild(colorControlDiv);
+
         const label = document.createElement('label');
         label.title = '選択済みの色を変更';
         label.style.display = 'flex';
@@ -145,18 +157,56 @@ class SelectedColorControl {
         const input = document.createElement('input');
         input.type = 'color';
         input.id = 'selected-color-map';
-        input.value = selectedMunicipalityColor;
         input.style.position = 'absolute';
         input.style.opacity = '0';
         input.style.width = '1px';
         input.style.height = '1px';
         input.style.pointerEvents = 'none';
 
-        label.appendChild(input);
-        label.addEventListener('click', () => input.click());
-        input.addEventListener('input', (e) => {
-            setSelectedMunicipalityColor(e.target.value);
+        // label.appendChild(input);
+        label.addEventListener('click', () => {
+
+            colorControlDiv.style.display = 'block';
+            colorControlDiv.innerHTML = ''; // 既存の内容をクリア
+
+            const keys = Array.from(specifiedCities.keys());
+            keys.forEach((key, index) => {
+                // keyも表示する
+                const keyLabel = document.createElement('span');
+                keyLabel.textContent = key;
+                keyLabel.style.position = 'absolute';
+                keyLabel.style.top = `${index * 30}px`;
+                keyLabel.style.left = '35px';
+                keyLabel.style.fontSize = '12px';
+                keyLabel.style.background = 'rgba(255, 255, 255, 0.8)';
+                keyLabel.style.padding = '2px 4px';
+                colorControlDiv.appendChild(keyLabel);
+
+                const colorInput = document.createElement('input');
+                colorInput.type = 'color';
+                colorInput.value = CsvHeaderColors.get(key) || getDefaultColor(key);
+                colorInput.style.position = 'absolute';
+                colorInput.style.top = `${index * 30}px`;
+                colorInput.style.left = '0px';
+                colorInput.style.width = '30px';
+                colorInput.style.height = '30px';
+                colorInput.style.cursor = 'pointer';
+
+
+                colorInput.addEventListener('input', (e) => {
+                    // 色を更新 
+                    CsvHeaderColors.set(key, e.target.value);
+                    updateMunicipalityLayer();
+                });
+                
+                colorControlDiv.appendChild(colorInput);
+            });
         });
+        // input.addEventListener('input', (e) => {
+        //     // 色を更新 
+        //     // TODO: 複数系列対応時に系列指定できるようにする
+        //     // setSelectedMunicipalityColor(e.target.value);
+        // });
 
         this._container.appendChild(label);
         return this._container;
@@ -209,11 +259,16 @@ async function loadCSV(csvUrl) {
             complete: (results) => {
                 specifiedCities.clear(); // 前のデータをクリア
                 results.data.forEach(row => {
-                    // カラム名「市区町村」または「city_name」に対応
-                    const cityName = row['市区町村'] || row.city_name;
-                    if (cityName && cityName.trim()) {
-                        specifiedCities.add(cityName.trim());
-                    }
+                    Object.keys(row).forEach(key => {
+                        // CsvHeaderNames.add(key);
+
+                        const list = specifiedCities.get(key) || new Set();
+                        const cityName = row[key];
+                        if (cityName && cityName.trim()) {
+                            list.add(cityName.trim());
+                            specifiedCities.set(key, list);
+                        }
+                    });
                 });
                 resolve();
             },
@@ -353,29 +408,58 @@ async function init() {
     });
 }
 
+function getDefaultColor(headerName) {
+    // ヘッダー名に基づいてデフォルトの色を返す
+    const colors = [
+        '#4a90d9', // 青
+        '#50e3c2', // 水色
+        '#f5a623', // オレンジ
+        '#9013fe', // 紫
+        '#b8e986', // 黄緑
+        '#ff6b35', // 赤橙
+        '#8b572a', // 茶色
+        '#7ed321'  // 緑
+    ];
+    const index = Array.from(specifiedCities.keys()).indexOf(headerName);
+    return colors[index % colors.length];
+}
+
 // 色分け表現を構築
 function buildColorExpression() {
+    const s = new Set();
+    specifiedCities.forEach((citySet) => {
+        citySet.forEach(city => s.add(city));
+    });
     // CSVで指定された市区町村は青色、それ以外はグレー
-    const cityList = Array.from(specifiedCities);
+    const cityList = Array.from(s);
 
     if (cityList.length === 0) {
         return '#cccccc'; // CSVが空の場合は全てグレー
     }
 
-    // N03_003（郡・政令市名）+ N03_004（市区町村名）を結合してマッチング
-    // 例: "上益城郡" + "益城町" = "上益城郡益城町"
-    return [
-        'case',
-        ['in',
-            ['concat',
-                ['coalesce', ['get', 'N03_003'], ''],
-                ['coalesce', ['get', 'N03_004'], '']
+    // 各ヘッダーごとに条件を作成
+    const conditions = [];
+
+    specifiedCities.forEach((citySet, headerName) => {
+        const cityList = Array.from(citySet);
+        const color = CsvHeaderColors.get(headerName) || getDefaultColor(headerName);
+
+        // N03_003（郡・政令市名）+ N03_004（市区町村名）を結合してマッチング
+        // 例: "上益城郡" + "益城町" = "上益城郡益城町"
+        conditions.push(
+            ['in',
+                ['concat',
+                    ['coalesce', ['get', 'N03_003'], ''],
+                    ['coalesce', ['get', 'N03_004'], '']
+                ],
+                ['literal', cityList]
             ],
-            ['literal', cityList]
-        ],
-        selectedMunicipalityColor,  // CSVで指定された市区町村（選択色）
-        '#cccccc'   // それ以外（グレー）
-    ];
+            color
+        );
+    });
+
+    // caseステートメントを構築
+    return ['case', ...conditions, '#cccccc'];
 }
 
 // 市区町村レイヤーを追加
