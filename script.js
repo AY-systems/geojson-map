@@ -4,7 +4,7 @@ import { Protocol, PMTiles } from 'pmtiles';
 import Papa from 'papaparse';
 
 // 国土数値情報の行政区域データ（PMTiles形式）
-const PMTILES_URL = './japan_municipalities.pmtiles';
+const PMTILES_URL = 'https://pub-e0919097260b4f549f82461a5ce949b3.r2.dev/japan_municipalities.pmtiles';
 
 // 検索用データのURL
 const SEARCH_DATA_URL = './search-data.json';
