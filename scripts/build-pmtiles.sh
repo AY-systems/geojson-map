@@ -115,16 +115,14 @@ log_success "一時ディレクトリ: $TEMP_DIR"
 log_step "GeoJSONを前処理中（mapshaper）..."
 
 echo "  処理内容:"
-echo "    - ポリゴンの簡略化 (10%)"
-echo "    - マルチポリゴンの分解 (explode)"
-echo "    - 面積順にソート"
-echo "    - 市区町村コードで重複除去"
+echo "    - ポリゴンの簡略化 (1% keep-shapes)"
+echo "    - 同じ行政区域コードで結合 (dissolve)"
 
+# 修正: -explode, -sort, -uniq を削除し、-dissolve で結合する
+# copy-fields で必要な属性（都道府県名など）を引き継ぐ
 mapshaper "$INPUT_GEOJSON" \
-    -simplify 10% keep-shapes \
-    -explode \
-    -sort 'this.area' descending \
-    -uniq N03_007 \
+    -simplify 1% keep-shapes \
+    -dissolve N03_007 copy-fields=N03_001,N03_002,N03_003,N03_004 \
     -o "$PROCESSED_GEOJSON" format=geojson force
 
 PROCESSED_SIZE=$(du -h "$PROCESSED_GEOJSON" | cut -f1)
