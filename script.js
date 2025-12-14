@@ -53,13 +53,20 @@ protocol.add(pmtiles);
 
 maplibregl.addProtocol('pmtiles', protocol.tile);
 
+
+const japanBounds = [
+    [120.0, 20.0], // Southwest coordinates (例: 東経120度, 北緯20度)
+    [160.0, 48.0]  // Northeast coordinates (例: 東経160度, 北緯48度)
+];
+
 // マップの初期化
 const map = new maplibregl.Map({
     container: 'map',
     style: 'https://tiles.openfreemap.org/styles/bright',
-    center: [139.75, 35.68],
-    zoom: 10,
-    preserveDrawingBuffer: true  // 画像エクスポート用
+    center: [137.0, 35.0], // 初期表示中心座標
+    zoom: 3,
+    preserveDrawingBuffer: true,  // 画像エクスポート用
+    maxBounds: japanBounds // 表示範囲の制限
 });
 
 // ナビゲーションコントロール追加
