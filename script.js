@@ -173,7 +173,7 @@ async function loadCSV(csvUrl) {
                 specifiedCities.clear(); // 前のデータをクリア
                 results.data.forEach(row => {
                     Object.keys(row).forEach(key => {
-                        
+
                         // 都道府県という文字が含まれるヘッダーの値をフィルターする
                         if (key.includes('都道府県')) {
                             return;
@@ -317,10 +317,10 @@ async function init() {
     }
 
     // マップの読み込み完了を待つ
-    map.on('load', () => {
+    map.on('load', async () => {
         hideLabelsFromBasemap();
 
-        addMunicipalityLayer();
+        await addMunicipalityLayer();
         // 初期URLでスプレッドシートを読み込み
         loadSpreadsheet(savedUrl);
     });
@@ -382,11 +382,11 @@ function buildColorExpression() {
     });
 
     // caseステートメントを構築
-    return ['case', ...conditions, '#cccccc'];
+    return ['case', ...conditions, '#dfdfdf'];
 }
 
 // 市区町村レイヤーを追加
-function addMunicipalityLayer() {
+async function addMunicipalityLayer() {
     // PMTilesソースを追加（絶対URLを使用してFirefoxでの問題を回避）
     map.addSource('municipalities', {
         type: 'vector',
@@ -404,7 +404,7 @@ function addMunicipalityLayer() {
         'source-layer': 'municipalities',
         paint: {
             'fill-color': colorExpression,
-            'fill-opacity': 0.6
+            'fill-opacity': 1
         }
     });
 
@@ -415,10 +415,40 @@ function addMunicipalityLayer() {
         source: 'municipalities',
         'source-layer': 'municipalities',
         paint: {
-            'line-color': '#ffffff',
-            'line-width': 1
+            'line-color': '#ccc',
+            'line-width': .5
         }
     });
+
+    // 都道府県境界線を追加
+    try {
+        const response = await fetch('prefectures-geo.json');
+        const prefecturesData = await response.json();
+
+        map.addSource('prefectures', {
+            type: 'geojson',
+            data: prefecturesData
+        });
+
+        // 都道府県境界線レイヤー
+        map.addLayer({
+            id: 'prefecture-border',
+            type: 'line',
+            source: 'prefectures',
+            layout: {
+                'line-cap': 'round',
+            },
+            paint: {
+                'line-color': '#666',
+                'line-width': 2,
+                'line-opacity': 1
+            }
+        });
+
+        console.log('都道府県境界線を追加しました');
+    } catch (error) {
+        console.warn('都道府県境界線の読み込みに失敗しました:', error);
+    }
 
     // ホバー時のポップアップ
     setupPopup();
