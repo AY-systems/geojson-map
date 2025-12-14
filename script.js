@@ -78,82 +78,13 @@ class SelectedColorControl {
     onAdd(map) {
         this._map = map;
         this._container = document.createElement('div');
+        this._container.style.display = 'grid';
+        this._container.style.gap = '5px';
+        this._container.style.gridTemplateColumns = '30px auto';
         this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
 
-        const colorControlDiv = document.createElement('div');
-        colorControlDiv.style.position = 'absolute';
-        colorControlDiv.style.width = '150px';
-        colorControlDiv.style.top = '30px';
-        colorControlDiv.style.left = '30px';
-        colorControlDiv.style.display = 'none'; // 非表示にする
-        colorControlDiv.style.background = "red";
-        this._container.appendChild(colorControlDiv);
+        this.updateControl();
 
-        const label = document.createElement('label');
-        label.title = '選択済みの色を変更';
-        label.style.display = 'flex';
-        label.style.alignItems = 'center';
-        label.style.justifyContent = 'center';
-        label.style.width = '30px';
-        label.style.height = '30px';
-        label.style.cursor = 'pointer';
-        label.textContent = '🎨';
-
-        const input = document.createElement('input');
-        input.type = 'color';
-        input.id = 'selected-color-map';
-        input.style.position = 'absolute';
-        input.style.opacity = '0';
-        input.style.width = '1px';
-        input.style.height = '1px';
-        input.style.pointerEvents = 'none';
-
-        // label.appendChild(input);
-        label.addEventListener('click', () => {
-
-            colorControlDiv.style.display = 'block';
-            colorControlDiv.innerHTML = ''; // 既存の内容をクリア
-
-            const keys = Array.from(specifiedCities.keys());
-            keys.forEach((key, index) => {
-                // keyも表示する
-                const keyLabel = document.createElement('span');
-                keyLabel.textContent = key;
-                keyLabel.style.position = 'absolute';
-                keyLabel.style.top = `${index * 30}px`;
-                keyLabel.style.left = '35px';
-                keyLabel.style.fontSize = '12px';
-                keyLabel.style.background = 'rgba(255, 255, 255, 0.8)';
-                keyLabel.style.padding = '2px 4px';
-                colorControlDiv.appendChild(keyLabel);
-
-                const colorInput = document.createElement('input');
-                colorInput.type = 'color';
-                colorInput.value = CsvHeaderColors.get(key) || getDefaultColor(key);
-                colorInput.style.position = 'absolute';
-                colorInput.style.top = `${index * 30}px`;
-                colorInput.style.left = '0px';
-                colorInput.style.width = '30px';
-                colorInput.style.height = '30px';
-                colorInput.style.cursor = 'pointer';
-
-
-                colorInput.addEventListener('input', (e) => {
-                    // 色を更新 
-                    CsvHeaderColors.set(key, e.target.value);
-                    updateMunicipalityLayer();
-                });
-
-                colorControlDiv.appendChild(colorInput);
-            });
-        });
-        // input.addEventListener('input', (e) => {
-        //     // 色を更新 
-        //     // TODO: 複数系列対応時に系列指定できるようにする
-        //     // setSelectedMunicipalityColor(e.target.value);
-        // });
-
-        this._container.appendChild(label);
         return this._container;
     }
 
@@ -161,9 +92,46 @@ class SelectedColorControl {
         this._container.parentNode.removeChild(this._container);
         this._map = undefined;
     }
+
+    updateControl() {
+        const container = this._container;
+
+        // colorControlDiv.style.display = 'block';
+        container.innerHTML = ''; // 既存の内容をクリア
+
+        const keys = Array.from(specifiedCities.keys());
+        keys.forEach((key, index) => {
+            const colorInput = document.createElement('input');
+            colorInput.type = 'color';
+            colorInput.value = CsvHeaderColors.get(key) || getDefaultColor(key);
+            colorInput.style.width = '30px';
+            colorInput.style.height = '30px';
+            colorInput.style.cursor = 'pointer';
+
+            colorInput.addEventListener('input', (e) => {
+                // 色を更新 
+                CsvHeaderColors.set(key, e.target.value);
+                updateMunicipalityLayer();
+            });
+
+            container.appendChild(colorInput);
+
+            // keyも表示する
+            const keyLabel = document.createElement('span');
+            keyLabel.textContent = key;
+            keyLabel.style.fontSize = '12px';
+            keyLabel.style.background = 'rgba(255, 255, 255, 0.8)';
+            keyLabel.style.padding = '2px 4px';
+            container.appendChild(keyLabel);
+        });
+
+    }
+
+
 }
 
-map.addControl(new SelectedColorControl(), 'top-left');
+const selectedColorControl = new SelectedColorControl();
+map.addControl(selectedColorControl, 'top-left');
 
 // スプレッドシートURLをCSV出力URLに変換
 function convertToCSVUrl(url) {
@@ -205,7 +173,14 @@ async function loadCSV(csvUrl) {
                 specifiedCities.clear(); // 前のデータをクリア
                 results.data.forEach(row => {
                     Object.keys(row).forEach(key => {
+                        
+                        // 都道府県という文字が含まれるヘッダーの値をフィルターする
+                        if (key.includes('都道府県')) {
+                            return;
+                        }
+
                         // CsvHeaderNames.add(key);
+                        // console.log(row);
 
                         const list = specifiedCities.get(key) || new Set();
                         const cityName = row[key];
@@ -242,6 +217,9 @@ async function loadSpreadsheet(url) {
 
         // レイヤーを更新
         updateMunicipalityLayer();
+
+        // 色変更コントロールを更新
+        selectedColorControl.updateControl();
 
         updateStatus('読み込み完了', '#28a745');
         cityCountEl.textContent = `${specifiedCities.size} 市区町村を選択中`;
