@@ -6,6 +6,7 @@
   "scripts": {
     "build:pmtiles": "./scripts/build-pmtiles.sh",
     "generate:search": "node scripts/generate-search-data.cjs",
+    "generate:prefectures": "node scripts/generate-prefectures-geo.cjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
