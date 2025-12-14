@@ -20,23 +20,6 @@ let specifiedCities = new Map();
 // CSVのヘッダー名称
 const CsvHeaderColors = new Map();
 
-// 選択済み市区町村の色（後から変更可能）
-// const SELECTED_COLOR_STORAGE_KEY = 'selectedMunicipalityColor';
-// let selectedMunicipalityColor = localStorage.getItem(SELECTED_COLOR_STORAGE_KEY) || '#4a90d9';
-
-function setSelectedMunicipalityColor(color) {
-    if (!color || typeof color !== 'string') return;
-    selectedMunicipalityColor = color;
-    localStorage.setItem(SELECTED_COLOR_STORAGE_KEY, color);
-
-    const mapPicker = document.getElementById('selected-color-map');
-    if (mapPicker && mapPicker.value !== color) {
-        mapPicker.value = color;
-    }
-
-    updateMunicipalityLayer();
-}
-
 // 検索用市区町村データ
 let searchData = [];
 
@@ -111,6 +94,8 @@ class SelectedColorControl {
             colorInput.addEventListener('input', (e) => {
                 // 色を更新 
                 CsvHeaderColors.set(key, e.target.value);
+                // ローカルストレージに保存
+                localStorage.setItem('csvHeaderColors', JSON.stringify(Array.from(CsvHeaderColors.entries())));
                 updateMunicipalityLayer();
             });
 
@@ -248,6 +233,17 @@ function updateMunicipalityLayer() {
 
 // メイン処理
 async function init() {
+    // 保存された色設定があれば復元
+    try {
+        const savedColors = localStorage.getItem('csvHeaderColors');
+        if (savedColors) {
+            const parsed = JSON.parse(savedColors);
+            parsed.forEach(([key, value]) => CsvHeaderColors.set(key, value));
+        }
+    } catch (e) {
+        console.error('色設定の読み込みに失敗しました', e);
+    }
+
     // UI要素を取得
     const urlInput = document.getElementById('spreadsheet-url');
     const loadBtn = document.getElementById('load-btn');
