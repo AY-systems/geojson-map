@@ -164,9 +164,6 @@ async function loadCSV(csvUrl) {
                             return;
                         }
 
-                        // CsvHeaderNames.add(key);
-                        // console.log(row);
-
                         const list = specifiedCities.get(key) || new Set();
                         const cityName = row[key];
                         if (cityName && cityName.trim()) {
@@ -369,7 +366,9 @@ function buildColorExpression() {
             ['in',
                 ['concat',
                     ['coalesce', ['get', 'N03_003'], ''],
-                    ['coalesce', ['get', 'N03_004'], '']
+                    ['coalesce', ['get', 'N03_004'], ''],
+                    ['coalesce', ['get', 'N03_005'], ''], // 区名（政令市の場合）
+                    
                 ],
                 ['literal', cityList]
             ],
