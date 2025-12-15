@@ -403,7 +403,10 @@ async function addMunicipalityLayer() {
         }
     });
 
-    // 境界線レイヤー
+    // 湖沼レイヤーを追加（市区町村の上）
+    addLakesLayer();
+
+    // 境界線レイヤー（湖沼の上）
     map.addLayer({
         id: 'municipality-line',
         type: 'line',
@@ -447,6 +450,42 @@ async function addMunicipalityLayer() {
 
     // ホバー時のポップアップ
     setupPopup();
+}
+
+// 湖沼レイヤーを追加
+function addLakesLayer() {
+    // lakesレイヤーがソースに存在するか確認
+    const source = map.getSource('municipalities');
+    if (!source) {
+        console.warn('lakesソースが見つかりません');
+        return;
+    }
+
+    // 湖沼塗りつぶしレイヤー
+    map.addLayer({
+        id: 'lakes-fill',
+        type: 'fill',
+        source: 'municipalities',
+        'source-layer': 'lakes',
+        paint: {
+            'fill-color': '#afcfe283',
+            'fill-opacity': 1
+        }
+    });
+
+    // 湖沼境界線レイヤー
+    map.addLayer({
+        id: 'lakes-line',
+        type: 'line',
+        source: 'municipalities',
+        'source-layer': 'lakes',
+        paint: {
+            'line-color': '#6b9bc422',
+            'line-width': 1
+        }
+    });
+
+    console.log('湖沼レイヤーを追加しました');
 }
 
 // ポップアップ設定
