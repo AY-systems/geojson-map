@@ -20,6 +20,8 @@ let specifiedCities = new Map();
 // CSVのヘッダー名称
 const CsvHeaderColors = new Map();
 
+const CsvDefaultColors = new Map();
+
 // 検索用市区町村データ
 let searchData = [];
 
@@ -63,7 +65,7 @@ class SelectedColorControl {
         this._container = document.createElement('div');
         this._container.style.display = 'grid';
         this._container.style.gap = '5px';
-        this._container.style.gridTemplateColumns = '30px auto';
+        this._container.style.gridTemplateColumns = '30px 1fr 30px';
         this._container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
 
         this.updateControl();
@@ -108,6 +110,22 @@ class SelectedColorControl {
             keyLabel.style.background = 'rgba(255, 255, 255, 0.8)';
             keyLabel.style.padding = '2px 4px';
             container.appendChild(keyLabel);
+
+            // CsvDefaultColorを元に色を取得するボタンを追加
+            const defaultColorBtn = document.createElement('button');
+            defaultColorBtn.textContent = '⭯';
+            defaultColorBtn.title = 'デフォルト色に戻す';
+            defaultColorBtn.style.cursor = 'pointer';
+            defaultColorBtn.addEventListener('click', () => {
+                const defaultColor = CsvDefaultColors.get(key) || getDefaultColor(key);
+                console.log('デフォルト色に戻す:', key, defaultColor);
+                colorInput.value = defaultColor;
+                CsvHeaderColors.set(key, defaultColor);
+                localStorage.setItem('csvHeaderColors', JSON.stringify(Array.from(CsvHeaderColors.entries())));
+                updateMunicipalityLayer();
+            });
+            container.appendChild(defaultColorBtn);
+
         });
 
     }
@@ -143,6 +161,21 @@ function convertToCSVUrl(url) {
     return url;
 }
 
+// #RRGGBB または #RGB の形式かをチェック
+function isHexColor(value) {
+    return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value);
+}
+
+// #RGB を #RRGGBB に正規化
+function normalizeHexColor(value) {
+    if (!isHexColor(value)) return value;
+    if (value.length === 4) {
+        const [, r, g, b] = value;
+        return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+    }
+    return value.toLowerCase();
+}
+
 // CSVを読み込んで市区町村リストを取得
 async function loadCSV(csvUrl) {
     const response = await fetch(csvUrl);
@@ -164,10 +197,19 @@ async function loadCSV(csvUrl) {
                             return;
                         }
 
+                        const cellValue = row[key];
+                        const trimmed = (cellValue || '').trim();
+
+                        // 列内に色コード(#RRGGBB / #RGB)があればそれを採用し、都市名リストには含めない
+                        if (trimmed && isHexColor(trimmed)) {
+                            CsvDefaultColors.set(key, normalizeHexColor(trimmed));
+                            console.log(`シートから色コードを取得: ${key} -> ${trimmed}`);
+                            return;
+                        }
+
                         const list = specifiedCities.get(key) || new Set();
-                        const cityName = row[key];
-                        if (cityName && cityName.trim()) {
-                            list.add(cityName.trim());
+                        if (trimmed) {
+                            list.add(trimmed);
                             specifiedCities.set(key, list);
                         }
                     });
